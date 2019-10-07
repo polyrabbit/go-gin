@@ -9,12 +9,14 @@
 package ginhttp
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 
 	"github.com/gin-gonic/gin"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
+	"github.com/opentracing/opentracing-go/log"
 )
 
 const defaultComponentName = "net/http"
@@ -86,6 +88,14 @@ func Middleware(tr opentracing.Tracer, options ...MWOption) gin.HandlerFunc {
 		ext.HTTPMethod.Set(sp, c.Request.Method)
 		ext.HTTPUrl.Set(sp, opts.urlTagFunc(c.Request.URL))
 		opts.spanObserver(sp, c.Request)
+		defer func() {
+			defer sp.Finish()
+			if err := recover(); err != nil {
+				ext.Error.Set(sp, true)
+				sp.LogFields(log.String("error", fmt.Sprint(err)))
+				panic(err) // continue to throw application error
+			}
+		}()
 
 		// set component name, use "net/http" if caller does not specify
 		componentName := opts.componentName
@@ -99,6 +109,5 @@ func Middleware(tr opentracing.Tracer, options ...MWOption) gin.HandlerFunc {
 		c.Next()
 
 		ext.HTTPStatusCode.Set(sp, uint16(c.Writer.Status()))
-		sp.Finish()
 	}
 }
